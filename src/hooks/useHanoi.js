@@ -13,30 +13,32 @@ export const useHanoi = (initialCount = 3) => {
 
   // useHanoi.js
   const moveDisk = useCallback((from, to) => {
-    let success = false;
-    
-    setPegs(prev => {
+    let movedDisk = null;
+
+    setPegs((prev) => {
       const source = [...prev[from]];
       const target = [...prev[to]];
       const disk = source[source.length - 1];
 
+      // Validation
       if (!disk || (target.length > 0 && disk > target[target.length - 1])) {
-        success = false;
         return prev;
       }
 
-      success = true;
+      movedDisk = disk; // Capture the disk value inside the state updater
       target.push(source.pop());
       return { ...prev, [from]: source, [to]: target };
     });
 
-    if (success) {
-      setMoves(m => m + 1);
-      // Note: To log history correctly with functional state, 
-      // you'd need to move this logic or accept the disk as an argument.
+    // Only update history and moves if a disk actually moved
+    if (movedDisk !== null) {
+      setMoves((m) => m + 1);
+      setHistory((h) => [...h, { from, to, disk: movedDisk }]);
+      return true;
     }
-    return success;
-  }, []); // Empty dependency array!
+    
+    return false;
+  }, []); // Important: keep dependency array empty! 
 
   const resetGame = useCallback((count = diskCount) => {
     setDiskCount(count);
