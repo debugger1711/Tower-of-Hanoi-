@@ -1,85 +1,95 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 
 export const useHanoi = (initialCount = 3) => {
   const [diskCount, setDiskCount] = useState(initialCount);
-  const [pegs, setPegs] = useState({
-    A: Array.from({ length: initialCount }, (_, i) => initialCount - i),
-    B: [],
-    C: [],
+  const [gameState, setGameState] = useState({
+    pegs: {
+      A: Array.from({ length: initialCount }, (_, i) => initialCount - i),
+      B: [],
+      C: [],
+    },
+    moves: 0,
+    history: [],
   });
-  const [moves, setMoves] = useState(0);
   const [isSolving, setIsSolving] = useState(false);
-  const [history, setHistory] = useState([]);
+  
+  // Use a ref to track solving state to prevent race conditions during the async loop
+  const solvingRef = useRef(false);
 
-  // useHanoi.js
   const moveDisk = useCallback((from, to) => {
-    let movedDisk = null;
-
-    setPegs((prev) => {
-      const source = [...prev[from]];
-      const target = [...prev[to]];
+    let success = false;
+    setGameState((prev) => {
+      const source = prev.pegs[from];
+      const target = prev.pegs[to];
+      
+      if (!source || source.length === 0) return prev;
+      
       const disk = source[source.length - 1];
-
-      // Validation
-      if (!disk || (target.length > 0 && disk > target[target.length - 1])) {
+      if (target.length > 0 && disk > target[target.length - 1]) {
         return prev;
       }
 
-      movedDisk = disk; // Capture the disk value inside the state updater
-      target.push(source.pop());
-      return { ...prev, [from]: source, [to]: target };
+      success = true;
+      return {
+        pegs: {
+          ...prev.pegs,
+          [from]: source.slice(0, -1),
+          [to]: [...target, disk],
+        },
+        moves: prev.moves + 1,
+        history: [...prev.history, { from, to, disk }],
+      };
     });
-
-    // Only update history and moves if a disk actually moved
-    if (movedDisk !== null) {
-      setMoves((m) => m + 1);
-      setHistory((h) => [...h, { from, to, disk: movedDisk }]);
-      return true;
-    }
-    
-    return false;
-  }, []); // Important: keep dependency array empty! 
+    return success;
+  }, []);
 
   const resetGame = useCallback((count = diskCount) => {
+    solvingRef.current = false;
     setDiskCount(count);
-    setPegs({
-      A: Array.from({ length: count }, (_, i) => count - i),
-      B: [],
-      C: [],
+    setGameState({
+      pegs: {
+        A: Array.from({ length: count }, (_, i) => count - i),
+        B: [],
+        C: [],
+      },
+      moves: 0,
+      history: [],
     });
-    setMoves(0);
     setIsSolving(false);
-    setHistory([]);
   }, [diskCount]);
 
   const solve = useCallback(async () => {
-    if (isSolving) return;
+    if (isSolving || solvingRef.current) return;
+    
+    // Reset to start position for a clean auto-solve
+    resetGame(diskCount);
+    
     setIsSolving(true);
+    solvingRef.current = true;
+    
     const steps = [];
-
-    const computeSteps = (n, source, target, aux) => {
-      if (n === 1) {
-        steps.push({ from: source, to: target });
-        return;
-      }
-      computeSteps(n - 1, source, aux, target);
-      steps.push({ from: source, to: target });
-      computeSteps(n - 1, aux, target, source);
+    const computeSteps = (n, src, tgt, aux) => {
+      if (n === 0) return;
+      computeSteps(n - 1, src, aux, tgt);
+      steps.push({ from: src, to: tgt });
+      computeSteps(n - 1, aux, tgt, src);
     };
 
     computeSteps(diskCount, 'A', 'C', 'B');
 
-    for (let i = 0; i < steps.length; i++) {
-      const step = steps[i];
-      await new Promise(resolve => setTimeout(resolve, 700));
+    for (const step of steps) {
+      if (!solvingRef.current) break; // Allow stopping if reset is clicked
+      await new Promise(resolve => setTimeout(resolve, 600));
       moveDisk(step.from, step.to);
     }
 
-    await new Promise(resolve => setTimeout(resolve, 300));
     setIsSolving(false);
-  }, [diskCount, isSolving, moveDisk]);
+    solvingRef.current = false;
+  }, [diskCount, isSolving, moveDisk, resetGame]);
 
   const minMoves = Math.pow(2, diskCount) - 1;
 
-  return { pegs, moveDisk, moves, resetGame, solve, isSolving, diskCount, setDiskCount, history, minMoves };
+  const { pegs, moves, history } = gameState;
+
+  return { pegs, moveDisk, moves, resetGame, solve, isSolving, diskCount, history, minMoves };
 };
